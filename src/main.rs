@@ -44,6 +44,7 @@ struct Timesheet {
 enum Subcommands {
     Clock {
         project_name: String,
+        message: Option<String>,
     },
     Project {
         command: String,
@@ -72,17 +73,32 @@ fn main() {
         load_timesheet_index(Path::new("/home/gabriel/timesheets/index.json")).unwrap();
 
     match command {
-        Subcommands::Clock { project_name } => {
-            let mut timesheet: Timesheet =
-                Timesheet::load_timesheet(Path::new(index_map.get(project_name).expect("Ahhhh")));
+        Subcommands::Clock {
+            project_name,
+            message,
+        } => {
+            let mut timesheet: Timesheet = Timesheet::load_timesheet(Path::new(
+                index_map
+                    .get(project_name)
+                    .expect("Timesheet file not found!"),
+            ));
+
+            let message = match message {
+                Some(m) => m,
+                None => &"".to_string(),
+            };
 
             if timesheet.is_clocked_in() {
-                timesheet.clock_out();
+                timesheet.clock_out(&message);
             } else {
-                timesheet.clock_in();
+                timesheet.clock_in(&message);
             }
 
-            timesheet.serialize(Path::new(index_map.get("midas").expect("Ahhhh")));
+            timesheet.serialize(Path::new(
+                index_map
+                    .get(project_name)
+                    .expect("Failed during serialization"),
+            ));
         }
 
         Subcommands::Project {
@@ -141,6 +157,24 @@ fn load_timesheet_index(
 }
 
 impl Timesheet {
+    /// Static function for initializing a timesheet JSON file
+    fn initialize_timesheet_json(path: &Path) {
+        // Initialize JSON structure with no contents
+        let initial_timesheet = Timesheet {
+            entries: Vec::new(),
+        };
+
+        let initial_json = serde_json::to_string_pretty(&initial_timesheet)
+            .expect("Failed to serialize initial index structure.");
+
+        let mut file =
+            File::create(path).expect("Creating project index path failed. Path is invalid.");
+
+        // Write the empty formatted JSON
+        file.write_all(initial_json.as_bytes())
+            .expect("Failed to write initial JSON to file.");
+    }
+
     /// Load a project/timesheet JSON file and load it into a vector of TimesheetEntry
     fn load_timesheet(path: &Path) -> Timesheet {
         // If timesheet path file does not exist, create it.
@@ -148,32 +182,21 @@ impl Timesheet {
             .try_exists()
             .expect("Index path is indeterminate. You may not have read permission.")
         {
-            eprintln!(
-                "Project index path not found. Creating index file at {}",
-                path.display()
-            );
-
-            // Initialize JSON structure with no contents
-            let initial_timesheet = Timesheet {
-                entries: Vec::new(),
-            };
-
-            let initial_json = serde_json::to_string_pretty(&initial_timesheet)
-                .expect("Failed to serialize initial index structure.");
-
-            let mut file =
-                File::create(path).expect("Creating project index path failed. Path is invalid.");
-
-            // Write the empty formatted JSON
-            file.write_all(initial_json.as_bytes())
-                .expect("Failed to write initial JSON to file.");
+            eprintln!("Project index path not found. {}", path.display());
         }
 
-        // Load the data, it will be empty if it was just created above
-        let data = std::fs::read_to_string(&path).expect("Could not load timesheet path.");
+        // Load the data, if it cannot find the path, create it
+        let data = match std::fs::read_to_string(&path) {
+            Ok(value) => value,
+            Err(_) => {
+                Self::initialize_timesheet_json(&path);
+                std::fs::read_to_string(&path).unwrap()
+            }
+        };
 
-        let timesheet: Timesheet =
-            serde_json::from_str(&data).expect("Could not read timesheet file JSON.");
+        let timesheet: Timesheet = serde_json::from_str(&data).expect(
+            "Could not read timesheet file JSON. Check to make sure JSON structure is valid.",
+        );
 
         let mut entries: Vec<TimesheetEntry> = vec![];
 
@@ -195,24 +218,6 @@ impl Timesheet {
             .expect("Failed to write initial JSON to file.");
     }
 
-    //fn get_last_entry(self: &Self) -> Option<&TimesheetEntry> {
-    //    match self.entries.last() {
-    //        Some(entry) => return Some(&entry),
-    //        None => None,
-    //    }
-    //}
-    //
-    //fn get_last_entry_mut(self: &mut Self) -> Option<&mut TimesheetEntry> {
-    //    match self.entries.last_mut() {
-    //        Some(entry) => return Some(entry),
-    //        None => None,
-    //    }
-    //}
-    //
-    //fn is_empty(self: &mut Self) -> bool {
-    //    self.entries.is_empty()
-    //}
-
     fn is_clocked_in(self: &mut Self) -> bool {
         match self.entries.last() {
             Some(last_entry) => last_entry.time_out.is_empty(),
@@ -224,7 +229,7 @@ impl Timesheet {
         !self.is_clocked_in()
     }
 
-    fn clock_in(self: &mut Self) {
+    fn clock_in(self: &mut Self, message: &String) {
         // Check if already clocked in
         if self.is_clocked_in() {
             println!("Already clocked in.");
@@ -242,7 +247,7 @@ impl Timesheet {
                     self.entries.push(TimesheetEntry {
                         time_in: now.clone(),
                         time_out: String::new(),
-                        message: String::new(),
+                        message: format!("IN: {}", message.to_string()),
                     });
                     println!("Clocked into a new entry.");
                 }
@@ -252,14 +257,14 @@ impl Timesheet {
                 self.entries.push(TimesheetEntry {
                     time_in: now.clone(),
                     time_out: String::new(),
-                    message: String::new(),
+                    message: format!("IN: {}", message.to_string()),
                 });
                 println!("Clocked in successfully.");
             }
         }
     }
 
-    fn clock_out(self: &mut Self) {
+    fn clock_out(self: &mut Self, message: &String) {
         if self.is_clocked_out() {
             println!("Not clocked in yet")
         }
@@ -273,6 +278,16 @@ impl Timesheet {
                     println!("Clock-out failed: Last entry isn't clocked in.");
                 } else {
                     last_entry.time_out = now.to_string();
+
+                    if !message.is_empty() {
+                        if last_entry.message.is_empty() {
+                            last_entry.message.push_str(format!("{}", message).as_str());
+                        } else {
+                            last_entry
+                                .message
+                                .push_str(format!(" | OUT: {}", message).as_str());
+                        }
+                    }
                 }
             }
             _ => (),
