@@ -1,21 +1,11 @@
-use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use index::{load_timesheet_index, serialize_index_hashmap};
 use std::{collections::HashMap, path::Path};
 use timesheet::Timesheet;
 
 pub mod index;
-pub mod project;
 pub mod query;
 pub mod timesheet;
-
-/// Command usage should look like this
-/// timesheet clock midas (for clock in if closed)
-/// timesheet clock midas (for clock out if open)
-/// timesheet mk-project i-begin
-/// timesheet rm-project i-begin
-/// timesheet query range midas <start yyyy-mm-dd> (optional, default NOW) <end yyyy-mm-dd> (optional) --as-csv (returns total hours worked)
-/// timesheet query two-weeks midas
 
 /// Clap subcommands
 #[derive(Subcommand)]
@@ -29,14 +19,14 @@ enum Subcommands {
         project_name: String,
     },
     Query {
-        timeframe: String,
         project_name: String,
+        timeframe: String,
     },
 }
 
 #[derive(Parser)]
 #[command(name = "timesheet")]
-#[command(version = "0.0.1")]
+#[command(version = "0.1.0")]
 #[command(about = "Clock in and out of projects.")]
 struct Args {
     #[command(subcommand)]
@@ -97,6 +87,7 @@ fn main() {
                 }
                 "remove" => {
                     index_map.remove(project_name);
+
                     serialize_index_hashmap(
                         index_map,
                         Path::new("/home/gabriel/timesheets/index.json"),
@@ -107,8 +98,16 @@ fn main() {
         }
 
         Subcommands::Query {
-            timeframe,
             project_name,
-        } => todo!(),
+            timeframe,
+        } => {
+            let timesheet_path = Path::new(
+                index_map
+                    .get(project_name)
+                    .expect("Timesheet file not found!"),
+            );
+
+            query::query_time_range(timesheet_path, timeframe, project_name);
+        }
     }
 }

@@ -5,15 +5,15 @@ use std::{fs::File, io::Write, path::Path};
 /// An entry in a project Timesheet.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TimesheetEntry {
-    time_in: String,
-    time_out: String,
-    message: String,
+    pub time_in: String,
+    pub time_out: String,
+    pub message: String,
 }
 
 /// A project Timesheet.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Timesheet {
-    entries: Vec<TimesheetEntry>,
+    pub entries: Vec<TimesheetEntry>,
 }
 
 impl Timesheet {
@@ -103,12 +103,19 @@ impl Timesheet {
                     println!("Clock-in failed: Last entry is still open.");
                 } else {
                     // If the last entry is clocked out, create a new entry and clock in
-                    self.entries.push(TimesheetEntry {
-                        time_in: now.clone(),
-                        time_out: String::new(),
-                        message: format!("IN: {}", message.to_string()),
-                    });
-                    println!("Clocked into a new entry.");
+                    if message.is_empty() {
+                        self.entries.push(TimesheetEntry {
+                            time_in: now.clone(),
+                            time_out: String::new(),
+                            message: message.to_string(),
+                        });
+                    } else {
+                        self.entries.push(TimesheetEntry {
+                            time_in: now.clone(),
+                            time_out: String::new(),
+                            message: format!("IN: {}", message.to_string()),
+                        });
+                    }
                 }
             }
             None => {
